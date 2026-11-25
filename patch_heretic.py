@@ -133,6 +133,40 @@ def main():
         ),
     ])
 
+    # Handle recurrent/looped models (e.g. Nanbeige) in get_module_io hook.
+    patch_file(model_py, [
+        (
+            """                if len(module_io) == layer_index:
+                    # First invocation of the hook for this layer.
+                    module_io.append({})
+
+                # Layers are invoked in order during inference,
+                # so this should always hold.
+                assert len(module_io) == layer_index + 1
+
+                if component not in module_io[layer_index]:
+                    module_io[layer_index][component] = {}
+
+                # Each module should be invoked at most once per inference step.
+                assert module_index not in module_io[layer_index][component]
+
+                # inputs[0] and outputs have shape (prompt, position, component),""",
+            """                # Models with recurrent/looped layers (e.g. Nanbeige) invoke each
+                # physical layer multiple times per forward pass. Only the first
+                # invocation is recorded; subsequent ones are ignored.
+                while len(module_io) <= layer_index:
+                    module_io.append({})
+
+                if component in module_io[layer_index] and module_index in module_io[layer_index][component]:
+                    return
+
+                if component not in module_io[layer_index]:
+                    module_io[layer_index][component] = {}
+
+                # inputs[0] and outputs have shape (prompt, position, component),""",
+        ),
+    ])
+
 
 if __name__ == "__main__":
     main()
